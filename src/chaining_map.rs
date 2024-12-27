@@ -1,21 +1,27 @@
 // this is still memory inefficient, since each element is a Vec
 #[derive(Debug)]
-pub struct ChainingHashMap<K: Eq + std::hash::Hash, V> {
+pub struct ChainingHashMap<K: Eq + std::hash::Hash, V, S = std::hash::RandomState> {
     backing: Vec<Option<Vec<(K, V)>>>,
     load: usize,
     load_factor: f32, // reduce the result to the scale expected by a bucket
+    hash_builder: S,
 }
 
-impl<K: Eq + std::hash::Hash, V> ChainingHashMap<K, V> {
+fn make_backing_with_capacity<K, V>(capacity: usize) -> Vec<Option<Vec<(K, V)>>> {
+    let mut backing_vec = Vec::with_capacity(capacity);
+    for _ in 0..capacity {
+        backing_vec.push(None);
+    }
+    backing_vec
+}
+
+impl<K: Eq + std::hash::Hash, V> ChainingHashMap<K, V, std::hash::RandomState> {
     pub fn with_capacity(capacity: usize) -> Self {
-        let mut backing_vec = Vec::with_capacity(capacity);
-        for _ in 0..capacity {
-            backing_vec.push(None);
-        }
         ChainingHashMap {
-            backing: backing_vec,
+            backing: make_backing_with_capacity::<K, V>(capacity),
             load: 0,
             load_factor: 0.7,
+            hash_builder: std::hash::RandomState::new(),
         }
     }
 
@@ -25,9 +31,25 @@ impl<K: Eq + std::hash::Hash, V> ChainingHashMap<K, V> {
     }
 }
 
+impl<K: Eq + std::hash::Hash, V, S> ChainingHashMap<K, V, S> {
+    pub fn with_capacity_and_hasher(capacity: usize, hash_builder: S) -> ChainingHashMap<K, V, S> {
+        ChainingHashMap {
+            backing: make_backing_with_capacity::<K, V>(capacity),
+            load: 0,
+            load_factor: 0.7,
+            hash_builder: hash_builder,
+        }
+    }
+
+    pub fn with_hasher(hash_builder: S) -> ChainingHashMap<K, V, S> {
+        ChainingHashMap::with_capacity_and_hasher(20, hash_builder)
+    }
+}
+
 impl<K: Eq + std::hash::Hash, V> ChainingHashMap<K, V> {
     fn get_index(&self, key: &K) -> usize {
-        let mut hasher = std::hash::DefaultHasher::new();
+        use std::hash::BuildHasher;
+        let mut hasher = self.hash_builder.build_hasher();
 
         key.hash(&mut hasher);
 
@@ -85,22 +107,14 @@ impl<K: Eq + std::hash::Hash, V> ChainingHashMap<K, V> {
     pub fn get(&self, key: &K) -> Option<&V> {
         let idx = self.get_index(&key);
 
-        // TODO: come up with a more "ergonomic" way to express this, perhaps using the "?"
-        // operator and closures
-        match &self.backing.get(idx) {
-            None => None,
-            Some(opt_vec) => match opt_vec {
-                None => None,
-                Some(vec) => {
-                    for item in vec {
-                        if *key == item.0 {
-                            return Some(&item.1);
-                        }
-                    }
-                    None
-                }
-            },
-        }
+        self.backing
+            .get(idx)?
+            .as_ref()?
+            .iter()
+            .filter(|item| *key == item.0)
+            .collect::<Vec<&(K, V)>>()
+            .first()
+            .map(|item| &item.1)
     }
 
     fn resize(&mut self) -> () {
@@ -134,24 +148,21 @@ impl<K: Eq + std::hash::Hash, V> ChainingHashMap<K, V> {
     pub fn remove_entry(&mut self, key: &K) -> Option<(K, V)> {
         let idx = self.get_index(key);
 
-        let mut internal_idx = None;
+        let indices_vec = self
+            .backing
+            .get(idx)?
+            .as_ref()?
+            .iter()
+            .enumerate()
+            .filter(|item: &(usize, &(K, V))| *key == item.1 .0)
+            .map(|item: (usize, &(K, V))| item.0)
+            .collect::<Vec<usize>>();
 
-        if let Some(opt_vec) = self.backing.get(idx) {
-            if let Some(vec) = opt_vec {
-                for (idx, &ref item) in vec.iter().enumerate() {
-                    if *key == item.0 {
-                        internal_idx = Some(idx);
-                        break;
-                    }
-                }
-            }
-        }
-
-        if let (Some(vec), Some(bucket_idx)) = (&mut self.backing[idx], internal_idx) {
-            Some(vec.remove(bucket_idx))
-        } else {
-            None
-        }
+        indices_vec.first().and_then(|internal_idx| {
+            self.backing[idx]
+                .as_mut()
+                .map(|vec| vec.remove(*internal_idx))
+        })
     }
 
     // Removes the value related to the given key, returning an Option containing its value if it
@@ -176,7 +187,7 @@ mod tests {
         assert_eq!(result2, None);
 
         let result3 = map.insert("yes".to_string(), 456);
-        assert_eq!(result3, Some(123));
+        assert_eq!(result3.unwrap(), 123);
 
         assert_eq!(map.len(), 2)
     }
@@ -219,9 +230,11 @@ mod tests {
             assert_eq!(result, None);
         }
 
+        assert_eq!(map.remove(&"100".to_string()), None);
+
         for i in 0..cap {
             let result = map.remove_entry(&i.to_string());
-            assert_eq!(result, Some((i.to_string(), i)));
+            assert_eq!(result.unwrap(), (i.to_string(), i));
         }
     }
 
@@ -235,9 +248,11 @@ mod tests {
             assert_eq!(result, None);
         }
 
+        assert_eq!(map.remove(&"100".to_string()), None);
+
         for i in 0..cap {
             let result = map.remove(&i.to_string());
-            assert_eq!(result, Some(i));
+            assert_eq!(result.unwrap(), i);
         }
     }
 }
