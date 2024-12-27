@@ -85,6 +85,8 @@ impl<K: Eq + std::hash::Hash, V> ChainingHashMap<K, V> {
     pub fn get(&self, key: &K) -> Option<&V> {
         let idx = self.get_index(&key);
 
+        // TODO: come up with a more "ergonomic" way to express this, perhaps using the "?"
+        // operator and closures
         match &self.backing.get(idx) {
             None => None,
             Some(opt_vec) => match opt_vec {
