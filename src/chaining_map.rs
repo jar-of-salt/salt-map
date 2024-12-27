@@ -105,10 +105,8 @@ impl<K: Eq + std::hash::Hash, V> ChainingHashMap<K, V> {
     }
 
     pub fn get(&self, key: &K) -> Option<&V> {
-        let idx = self.get_index(&key);
-
         self.backing
-            .get(idx)?
+            .get(self.get_index(&key))?
             .as_ref()?
             .iter()
             .filter(|item| *key == item.0)
