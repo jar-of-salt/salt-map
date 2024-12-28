@@ -1,6 +1,6 @@
 // this is still memory inefficient, since each element is a Vec
 #[derive(Debug)]
-pub struct ChainingHashMap<K: Eq + std::hash::Hash, V, S = std::hash::RandomState> {
+pub struct ChainingHashMap<K, V, S = std::hash::RandomState> {
     backing: Vec<Option<Vec<(K, V)>>>,
     load: usize,
     load_factor: f32, // reduce the result to the scale expected by a bucket
@@ -15,7 +15,7 @@ fn make_backing_with_capacity<K, V>(capacity: usize) -> Vec<Option<Vec<(K, V)>>>
     backing_vec
 }
 
-impl<K: Eq + std::hash::Hash, V> ChainingHashMap<K, V, std::hash::RandomState> {
+impl<K, V> ChainingHashMap<K, V, std::hash::RandomState> {
     pub fn with_capacity(capacity: usize) -> Self {
         ChainingHashMap {
             backing: make_backing_with_capacity::<K, V>(capacity),
@@ -31,7 +31,7 @@ impl<K: Eq + std::hash::Hash, V> ChainingHashMap<K, V, std::hash::RandomState> {
     }
 }
 
-impl<K: Eq + std::hash::Hash, V, S> ChainingHashMap<K, V, S> {
+impl<K, V, S> ChainingHashMap<K, V, S> {
     pub fn with_capacity_and_hasher(capacity: usize, hash_builder: S) -> ChainingHashMap<K, V, S> {
         ChainingHashMap {
             backing: make_backing_with_capacity::<K, V>(capacity),
@@ -46,8 +46,12 @@ impl<K: Eq + std::hash::Hash, V, S> ChainingHashMap<K, V, S> {
     }
 }
 
-impl<K: Eq + std::hash::Hash, V> ChainingHashMap<K, V> {
+impl<K, V> ChainingHashMap<K, V>
+where
+    K: Eq + std::hash::Hash,
+{
     fn get_index(&self, key: &K) -> usize {
+        // builds a hash with the instance's `hash_builder`, using the `BuildHasher` trait
         use std::hash::BuildHasher;
         let mut hasher = self.hash_builder.build_hasher();
 
@@ -66,6 +70,7 @@ impl<K: Eq + std::hash::Hash, V> ChainingHashMap<K, V> {
         self.backing.capacity()
     }
 
+    // TODO: try to make this more idiomatic
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         // resize before getting index, otherwise it will be the index for the previous capacity
         if self.len() as f32 / self.capacity() as f32 > self.load_factor {
@@ -104,6 +109,7 @@ impl<K: Eq + std::hash::Hash, V> ChainingHashMap<K, V> {
         }
     }
 
+    /// Gets reference to value based on the input key
     pub fn get(&self, key: &K) -> Option<&V> {
         self.backing
             .get(self.get_index(&key))?
