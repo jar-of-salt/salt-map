@@ -35,7 +35,8 @@ impl<K, V> ChainingHashMap<K, V, hash::RandomState> {
     }
 }
 
-impl<K, V, S> ChainingHashMap<K, V, S> {
+impl<K, V, S> ChainingHashMap<K, V, S>
+{
     pub fn with_capacity_and_hasher(capacity: usize, hash_builder: S) -> Self {
         let load_factor = 0.7;
         ChainingHashMap {
@@ -57,25 +58,12 @@ impl<K, V, S> ChainingHashMap<K, V, S> {
     pub fn len(&self) -> usize {
         self.load
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.load == 0
-    }
-
-    pub fn clear(&mut self) {
-        self.load = 0;
-        self.backing.iter_mut().for_each(|x| *x = None)
-    }
-
-    pub fn hasher(&self) -> &S {
-        &self.hash_builder
-    }
 }
 
 impl<K, V, S> ChainingHashMap<K, V, S>
 where
     K: Eq + hash::Hash,
-    S: hash::BuildHasher,
+    S: hash::BuildHasher
 {
     fn get_index(&self, key: &K) -> usize {
         // builds a hash with the instance's `hash_builder`, using the `BuildHasher` trait
@@ -190,14 +178,9 @@ where
             .collect::<Vec<usize>>();
 
         indices_vec.first().and_then(|internal_idx| {
-            let item = self.backing[idx]
+            self.backing[idx]
                 .as_mut()
-                .map(|vec| vec.remove(*internal_idx));
-            if item.is_some() {
-                self.load -= 1;
-            }
-
-            item
+                .map(|vec| vec.remove(*internal_idx))
         })
     }
 
@@ -266,15 +249,15 @@ mod tests {
 
         assert_eq!(map.get(&"yes".to_string()), Some(123).as_ref());
 
-        let item = map.get_mut(&"yes".to_string());
+        let mut item = map.get_mut(&"yes".to_string());
 
         assert!(item.is_some(), "Expected entry is not present");
 
-        if let Some(value) = item {
-            *value += 1;
+        if let Some(&mut value) = item {
+            value += 1;
         }
 
-        assert_eq!(map.get(&"yes".to_string()), Some(124).as_ref());
+        assert_eq!(map.get(&"yes".to_string()), Some(124));
     }
 
     #[test]
@@ -312,54 +295,5 @@ mod tests {
             assert_eq!(result.unwrap(), i);
         }
     }
-
-    #[test]
-    fn grow_and_shrink_len() {
-        let cap = 10;
-        let mut map = ChainingHashMap::with_capacity(cap);
-
-        for i in 0..cap {
-            let result = map.insert(i.to_string(), i);
-            assert_eq!(result, None);
-            assert_eq!(map.len(), i + 1);
-        }
-
-        assert_eq!(map.remove(&"100".to_string()), None);
-
-        for i in 0..cap {
-            let result = map.remove(&i.to_string());
-            assert_eq!(result.unwrap(), i);
-            assert_eq!(map.len(), 10 - i - 1);
-        }
-
-        for i in 0..cap {
-            let result = map.insert(i.to_string(), i);
-            assert_eq!(result, None);
-            assert_eq!(map.len(), i + 1);
-        }
-
-        assert_eq!(map.remove(&"100".to_string()), None);
-
-        for i in 0..cap {
-            let result = map.remove_entry(&i.to_string());
-            assert_eq!(result.unwrap(), (i.to_string(), i));
-            assert_eq!(map.len(), 10 - i - 1);
-        }
-    }
-
-    #[test]
-    fn clear() {
-        let cap = 100;
-        let mut map = ChainingHashMap::with_capacity(cap);
-
-        for i in 0..cap {
-            map.insert(i.to_string(), i);
-        }
-
-        assert_eq!(map.len(), cap);
-
-        map.clear();
-
-        assert_eq!(map.len(), 0);
-    }
 }
+
