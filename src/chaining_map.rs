@@ -1,4 +1,5 @@
 use std::hash;
+use std::mem;
 
 // this is still memory inefficient, since each element is a Vec
 #[derive(Debug)]
@@ -10,6 +11,9 @@ pub struct ChainingHashMap<K, V, S = hash::RandomState> {
 }
 
 fn make_backing_with_capacity<K, V>(capacity: usize, load_factor: f32) -> Vec<Option<Vec<(K, V)>>> {
+    // makes a backing with an effective capacity of the given capacity, actual capacity of
+    // capacity / load factor; this ensures the map can hold at least `capacity` before
+    // reallocating
     let modified_capacity = (capacity as f32 / load_factor) as usize;
     let mut backing_vec = Vec::with_capacity(modified_capacity);
     for _ in 0..modified_capacity {
@@ -51,6 +55,8 @@ impl<K, V, S> ChainingHashMap<K, V, S> {
     }
 
     pub fn capacity(&self) -> usize {
+        // TODO: go over the semantics of capacity to make sure they make sense; i.e. need to make
+        // sure the rules for when reallocation happens make sense
         self.backing.capacity()
     }
 
@@ -98,21 +104,16 @@ where
 
         let idx = self.get_index(&key);
 
-        let entry = std::mem::replace(&mut self.backing[idx], None);
-
-        // TODO: implement a resizing protocol once len / capacity > load factor
-
-        match entry {
+        match mem::replace(&mut self.backing[idx], None) {
             None => {
                 self.backing[idx] = Some(vec![(key, value)]);
                 self.load += 1;
                 None
             }
             Some(mut vec) => {
-                let mut result = None;
                 for item in vec.iter_mut() {
                     if key == item.0 {
-                        result = Some(std::mem::replace(&mut item.1, value));
+                        let result = Some(mem::replace(&mut item.1, value));
                         self.backing[idx] = Some(vec);
                         return result;
                     }
@@ -123,7 +124,7 @@ where
 
                 self.backing[idx] = Some(vec);
 
-                result
+                None
             }
         }
     }
@@ -148,7 +149,7 @@ where
             .map(|item| &mut item.1)
     }
 
-    fn resize(&mut self) -> () {
+    fn resize(&mut self) {
         // resizes by exponentially doubling the capacity
 
         // double the capacity
@@ -164,7 +165,7 @@ where
         self.load = 0;
 
         // replace the old backing and extract it
-        let old_backing = std::mem::replace(&mut self.backing, new_backing);
+        let old_backing = mem::replace(&mut self.backing, new_backing);
 
         for item in old_backing.into_iter() {
             // for each item in the old backing, check if it has a vec inside, iterate over the vec
